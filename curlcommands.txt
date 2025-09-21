@@ -1,0 +1,10 @@
+# Create a tour package
+curl -X POST http://localhost:8080/packages \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"BB","name":"Beekeepers you Betcha"}'
+
+# List tour packages
+curl http://localhost:8080/packages
+
+# Delete the tour package
+curl -X DELETE http://localhost:8080/packages/BB

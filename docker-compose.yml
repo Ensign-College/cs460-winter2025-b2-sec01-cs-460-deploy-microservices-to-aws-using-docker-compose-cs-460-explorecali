@@ -1,0 +1,40 @@
+version: "3.9"
+services:
+  mysql-db:
+    image: mysql:9.4 
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: verysecret
+      MYSQL_DATABASE: mydatabase
+    ports:
+      - "3306:3306"        # optional for host tooling; not required for app-to-db
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pverysecret"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+
+  jpa-app:
+    image: explorecali-jpa:3.0.0
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+    restart: on-failure
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_APPLICATION_JSON: >
+        {
+          "spring.datasource.url": "jdbc:mysql://mysql-db:3306/mydatabase?serverTimezone=UTC",
+          "spring.datasource.username": "root",
+          "spring.datasource.password": "verysecret",
+
+          "spring.datasource.hikari.initialization-fail-timeout": "0",
+
+          "spring.flyway.enabled": "true",
+
+          "spring.docker.compose.enabled": "false"
+        }

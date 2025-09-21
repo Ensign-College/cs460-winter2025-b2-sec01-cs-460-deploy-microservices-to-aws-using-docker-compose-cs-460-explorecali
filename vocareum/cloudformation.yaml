@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Base infrastructure for Explore California microservices labs on Vocareum.
+Parameters:
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+  LatestAmiId:
+    Description: SSM parameter for the latest Amazon Linux 2023 AMI
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+Resources:
+  VocareumVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: VocareumVPC
+  VocareumSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VocareumVPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: VocareumSubnet
+  VocareumInternetGateway:
+    Type: AWS::EC2::InternetGateway
+  VocareumVPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VocareumVPC
+      InternetGatewayId: !Ref VocareumInternetGateway
+  VocareumRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VocareumVPC
+  VocareumRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VocareumVPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref VocareumRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref VocareumInternetGateway
+  VocareumSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref VocareumSubnet
+      RouteTableId: !Ref VocareumRouteTable
+  VocareumSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH and HTTP access
+      VpcId: !Ref VocareumVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+  VocareumRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+  VocareumInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref VocareumRole
+  VocareumInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.micro
+      ImageId: !Ref LatestAmiId
+      SubnetId: !Ref VocareumSubnet
+      SecurityGroupIds:
+        - !Ref VocareumSecurityGroup
+      KeyName: !Ref KeyName
+      IamInstanceProfile: !Ref VocareumInstanceProfile
+  VocareumBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'vocareum-${AWS::AccountId}-${AWS::Region}'
+Outputs:
+  InstanceId:
+    Description: ID of the EC2 instance
+    Value: !Ref VocareumInstance
+  BucketName:
+    Description: Name of the S3 bucket
+    Value: !Ref VocareumBucket

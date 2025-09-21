@@ -1,0 +1,25 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:*",
+        "iam:*",
+        "ec2:*",
+        "s3:*",
+        "logs:*",
+        "cloudwatch:*",
+        "rds:*",
+        "dynamodb:*",
+        "sns:*",
+        "sqs:*",
+        "ecr:*",
+        "ecs:*",
+        "elasticloadbalancing:*",
+        "lambda:*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
