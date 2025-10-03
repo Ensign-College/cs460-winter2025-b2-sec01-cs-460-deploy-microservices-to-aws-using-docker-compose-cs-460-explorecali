@@ -16,22 +16,25 @@ import org.springframework.test.web.servlet.MockMvc;
 import edu.ensign.cs460.business.TourPackageService;
 import edu.ensign.cs460.business.TourService;
 import edu.ensign.cs460.business.TourRatingService;
+import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 
 @WebMvcTest(controllers = RecommendationController.class)
-@AutoConfigureMockMvc(addFilters = false) // disable security filters if present
+@AutoConfigureMockMvc(addFilters = false)
 class RecommendationControllerTest {
 
-  @Autowired
-  private MockMvc mvc;
+  @Autowired private MockMvc mvc;
+
+  // Mocks required by your @SpringBootApplication autowiring (third workaround)
+  @MockBean private edu.ensign.cs460.business.TourPackageService tourPackageService;
+  @MockBean private edu.ensign.cs460.business.TourService tourService;
+  @MockBean private edu.ensign.cs460.business.TourRatingService tourRatingService;
 
   // Controller dependency
   @MockBean
   private RecommendationService service;
 
   // Mock beans required by the @SpringBootApplication class so the test context can start
-  @MockBean private TourPackageService tourPackageService;
-  @MockBean private TourService tourService;
-  @MockBean private TourRatingService tourRatingService;
 
   @Test
   void top_valid_returns200Json() throws Exception {
@@ -79,5 +82,13 @@ class RecommendationControllerTest {
     mvc.perform(get("/recommendations/customer/0")).andExpect(status().isBadRequest());
     mvc.perform(get("/recommendations/customer/5").param("limit", "0"))
        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void clearCache_returns204_andEvicts() throws Exception {
+    mvc.perform(delete("/recommendations/cache"))
+       .andExpect(status().isNoContent());
+
+    verify(service).evictAll();
   }
 }
