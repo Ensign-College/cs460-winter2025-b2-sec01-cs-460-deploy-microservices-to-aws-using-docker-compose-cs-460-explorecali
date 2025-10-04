@@ -8,3 +8,9 @@ curl http://localhost:8080/packages
 
 # Delete the tour package
 curl -X DELETE http://localhost:8080/packages/BB
+
+# Quick smoke test for recommendation service
+curl -X GET http://localhost:8080/recommendations/top/5
+
+# Customer-Specific Recommendations Endpoint
+curl -X GET http://localhost:8080/recommendations/customer/5?limit=5
