@@ -1,16 +1,166 @@
-# Create a tour package
-curl -X POST http://localhost:8080/packages \
+# =========================================================
+# EXISTING COMMANDS (now with auth variants and expectations)
+# =========================================================
+
+# Create a tour package (ADMIN)
+curl -i -X POST http://localhost:8080/packages \
   -H 'Content-Type: application/json' \
   -d '{"code":"BB","name":"Beekeepers you Betcha"}'
+# Expect: HTTP/1.1 401
 
-# List tour packages
-curl http://localhost:8080/packages
+curl -i -u user:password -X POST http://localhost:8080/packages \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"BB","name":"Beekeepers you Betcha"}'
+# Expect: HTTP/1.1 403
 
-# Delete the tour package
-curl -X DELETE http://localhost:8080/packages/BB
+curl -i -u admin:admin123 -X POST http://localhost:8080/packages \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"BB","name":"Beekeepers you Betcha"}'
+# Expect: HTTP/1.1 201 (or 200/204 depending on controller)
 
-# Quick smoke test for recommendation service
-curl -X GET http://localhost:8080/recommendations/top/5
+# List tour packages (USER/ADMIN)
+curl -i http://localhost:8080/packages
+# Expect: HTTP/1.1 401
 
-# Customer-Specific Recommendations Endpoint
-curl -X GET http://localhost:8080/recommendations/customer/5?limit=5
+curl -i -u user:password http://localhost:8080/packages
+# Expect: HTTP/1.1 200
+
+curl -i -u admin:admin123 http://localhost:8080/packages
+# Expect: HTTP/1.1 200
+
+# Delete the tour package (ADMIN)
+curl -i -X DELETE http://localhost:8080/packages/BB
+# Expect: HTTP/1.1 401
+
+curl -i -u user:password -X DELETE http://localhost:8080/packages/BB
+# Expect: HTTP/1.1 403
+
+curl -i -u admin:admin123 -X DELETE http://localhost:8080/packages/BB
+# Expect: HTTP/1.1 204 (or 200)  # if not found you may see 404
+
+# Quick smoke test for recommendation service (USER/ADMIN)
+curl -i -X GET http://localhost:8080/recommendations/top/5
+# Expect: HTTP/1.1 401
+
+curl -i -u user:password -X GET http://localhost:8080/recommendations/top/5
+# Expect: HTTP/1.1 200
+
+curl -i -u admin:admin123 -X GET http://localhost:8080/recommendations/top/5
+# Expect: HTTP/1.1 200
+
+# Customer-Specific Recommendations Endpoint (USER/ADMIN)
+curl -i -X GET "http://localhost:8080/recommendations/customer/5?limit=5"
+# Expect: HTTP/1.1 401
+
+curl -i -u user:password -X GET "http://localhost:8080/recommendations/customer/5?limit=5"
+# Expect: HTTP/1.1 200
+
+curl -i -u admin:admin123 -X GET "http://localhost:8080/recommendations/customer/5?limit=5"
+# Expect: HTTP/1.1 200
+
+
+# =========================================================
+# TOUR RATINGS ENDPOINTS (as in TourRatingControllerTest)
+#   Base: /tours/{tourId}/ratings
+#   Using TOUR_ID=999, CUSTOMER_ID=1000
+# =========================================================
+
+# ---------- CREATE rating (POST /tours/999/ratings) ----------
+curl -i -X POST http://localhost:8080/tours/999/ratings \
+  -H 'Content-Type: application/json' \
+  -d '{"score":3,"comment":"comment","customerId":1000}'
+# Expect: HTTP/1.1 401
+
+curl -i -u user:password -X POST http://localhost:8080/tours/999/ratings \
+  -H 'Content-Type: application/json' \
+  -d '{"score":3,"comment":"comment","customerId":1000}'
+# Expect: HTTP/1.1 403
+
+curl -i -u admin:admin123 -X POST http://localhost:8080/tours/999/ratings \
+  -H 'Content-Type: application/json' \
+  -d '{"score":3,"comment":"comment","customerId":1000}'
+# Expect: HTTP/1.1 201 (or 200)
+
+# ---------- DELETE rating (DELETE /tours/999/ratings/1000) ----------
+curl -i -X DELETE http://localhost:8080/tours/999/ratings/1000
+# Expect: HTTP/1.1 401
+
+curl -i -u user:password -X DELETE http://localhost:8080/tours/999/ratings/1000
+# Expect: HTTP/1.1 403
+
+curl -i -u admin:admin123 -X DELETE http://localhost:8080/tours/999/ratings/1000
+# Expect: HTTP/1.1 204 (or 200)  # 404 if not found
+
+# ---------- LIST ratings (GET /tours/999/ratings) ----------
+curl -i http://localhost:8080/tours/999/ratings
+# Expect: HTTP/1.1 401
+
+curl -i -u user:password http://localhost:8080/tours/999/ratings
+# Expect: HTTP/1.1 200  # 404 if tour not found per controller logic
+
+curl -i -u admin:admin123 http://localhost:8080/tours/999/ratings
+# Expect: HTTP/1.1 200
+
+# ---------- AVERAGE (GET /tours/999/ratings/average) ----------
+curl -i http://localhost:8080/tours/999/ratings/average
+# Expect: HTTP/1.1 401
+
+curl -i -u user:password http://localhost:8080/tours/999/ratings/average
+# Expect: HTTP/1.1 200  # 404 if tour not found per controller logic
+
+curl -i -u admin:admin123 http://localhost:8080/tours/999/ratings/average
+# Expect: HTTP/1.1 200
+
+# ---------- PARTIAL UPDATE (PATCH /tours/999/ratings) ----------
+curl -i -X PATCH http://localhost:8080/tours/999/ratings \
+  -H 'Content-Type: application/json' \
+  -d '{"score":3,"comment":"comment","customerId":1000}'
+# Expect: HTTP/1.1 401
+
+curl -i -u user:password -X PATCH http://localhost:8080/tours/999/ratings \
+  -H 'Content-Type: application/json' \
+  -d '{"score":3,"comment":"comment","customerId":1000}'
+# Expect: HTTP/1.1 403
+
+curl -i -u admin:admin123 -X PATCH http://localhost:8080/tours/999/ratings \
+  -H 'Content-Type: application/json' \
+  -d '{"score":3,"comment":"comment","customerId":1000}'
+# Expect: HTTP/1.1 200
+
+# Example partial body (if supported by controller)
+curl -i -u admin:admin123 -X PATCH http://localhost:8080/tours/999/ratings \
+  -H 'Content-Type: application/json' \
+  -d '{"comment":"updated comment"}'
+# Expect: HTTP/1.1 200
+
+# ---------- FULL UPDATE (PUT /tours/999/ratings) ----------
+curl -i -X PUT http://localhost:8080/tours/999/ratings \
+  -H 'Content-Type: application/json' \
+  -d '{"score":3,"comment":"comment","customerId":1000}'
+# Expect: HTTP/1.1 401
+
+curl -i -u user:password -X PUT http://localhost:8080/tours/999/ratings \
+  -H 'Content-Type: application/json' \
+  -d '{"score":3,"comment":"comment","customerId":1000}'
+# Expect: HTTP/1.1 403
+
+curl -i -u admin:admin123 -X PUT http://localhost:8080/tours/999/ratings \
+  -H 'Content-Type: application/json' \
+  -d '{"score":3,"comment":"comment","customerId":1000}'
+# Expect: HTTP/1.1 200
+
+# ---------- BATCH CREATE (POST /tours/999/ratings/batch?score=3) ----------
+curl -i -X POST "http://localhost:8080/tours/999/ratings/batch?score=3" \
+  -H 'Content-Type: application/json' \
+  -d '[123,456]'
+# Expect: HTTP/1.1 401
+
+curl -i -u user:password -X POST "http://localhost:8080/tours/999/ratings/batch?score=3" \
+  -H 'Content-Type: application/json' \
+  -d '[123,456]'
+# Expect: HTTP/1.1 403
+
+curl -i -u admin:admin123 -X POST "http://localhost:8080/tours/999/ratings/batch?score=3" \
+  -H 'Content-Type: application/json' \
+  -d '[123,456]'
+# Expect: HTTP/1.1 200 (or 201)
