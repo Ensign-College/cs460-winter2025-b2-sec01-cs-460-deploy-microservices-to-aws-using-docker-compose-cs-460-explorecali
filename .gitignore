@@ -5,8 +5,7 @@ node_modules
 npm-debug.log
 .vscode/launch.json
 data/
-.env
-.env.*
+.smoke.*
 
 # Maven
 HELP.md

@@ -30,7 +30,7 @@ public class TourRating {
   @Column
   private String comment;
 
-  protected TourRating() {
+  public TourRating() {
   }
 
   /**

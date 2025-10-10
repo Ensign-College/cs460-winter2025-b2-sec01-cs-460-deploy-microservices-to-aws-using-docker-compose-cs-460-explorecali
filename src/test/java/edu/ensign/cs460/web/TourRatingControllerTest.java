@@ -1,142 +1,187 @@
 package edu.ensign.cs460.web;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.core.Is.is;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.springframework.boot.test.context.SpringBootTest.WebEnvironment.RANDOM_PORT;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 import java.util.NoSuchElementException;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.mockito.Mock;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-
-import edu.ensign.cs460.business.TourRatingService;
-import edu.ensign.cs460.model.Tour;
-import edu.ensign.cs460.model.TourRating;
-
 import jakarta.validation.ConstraintViolationException;
 
-@SpringBootTest(webEnvironment = RANDOM_PORT)
-public class TourRatingControllerTest {
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
 
-  // These Tour and rating id's do not already exist in the db
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import com.example.explorecalijpa.config.SecurityConfig; // ← adjust if needed
+
+import edu.ensign.cs460.business.TourRatingService;
+import edu.ensign.cs460.model.TourRating;
+
+@WebMvcTest(TourRatingController.class)
+@Import({ SecurityConfig.class /* , YourControllerAdviceIfAny.class */ })
+class TourRatingControllerTest {
+
   private static final int TOUR_ID = 999;
   private static final int CUSTOMER_ID = 1000;
   private static final int SCORE = 3;
   private static final String COMMENT = "comment";
-  private static final String TOUR_RATINGS_URL = "/tours/" + TOUR_ID + "/ratings";
+  private static final String BASE = "/tours/" + TOUR_ID + "/ratings";
 
-  @Autowired
-  private TestRestTemplate restTemplate;
+  @Autowired private MockMvc mvc;
+  @Autowired private ObjectMapper mapper;
 
-  private TestRestTemplate userRestTemplate;
-  private TestRestTemplate adminRestTemplate;
+  @MockBean private TourRatingService service;
 
-  @MockBean
-  private TourRatingService serviceMock;
+  private final RatingDto ratingDto = new RatingDto(SCORE, COMMENT, CUSTOMER_ID);
 
-  @Mock
-  private TourRating tourRatingMock;
-
-  @Mock
-  private Tour tourMock;
-
-  private RatingDto ratingDto = new RatingDto(SCORE, COMMENT, CUSTOMER_ID);
-
-  @BeforeEach
-  void setUp() {
-    this.userRestTemplate = restTemplate.withBasicAuth("user", "password");
-    this.adminRestTemplate = restTemplate.withBasicAuth("admin", "admin123");
+  private static String basic(String user, String pass) {
+    var token = user + ":" + pass;
+    var b64 = Base64.getEncoder().encodeToString(token.getBytes(StandardCharsets.UTF_8));
+    return "Basic " + b64;
   }
 
-  // Example: reads use userRestTemplate
-  // var resp = userRestTemplate.getForEntity("/tours/1/ratings", String.class);
-
-  // Example: mutations use adminRestTemplate
-  // var resp = adminRestTemplate.postForEntity("/packages", request, String.class);
-
-  // user should NOT be able to create a rating
-  // assert status == FORBIDDEN on POST with userRestTemplate
-
+  // ---------- CREATE (ADMIN) ----------
   @Test
-  void testCreateTourRating() {
-    adminRestTemplate.postForEntity(TOUR_RATINGS_URL, ratingDto, RatingDto.class);
-    verify(this.serviceMock).createNew(TOUR_ID, CUSTOMER_ID, SCORE, COMMENT);
+void testCreateTourRating() throws Exception {
+  // stub a non-null result so controller can serialize
+  when(service.createNew(TOUR_ID, CUSTOMER_ID, SCORE, COMMENT))
+      .thenReturn(new TourRating());
+
+  mvc.perform(post(BASE)
+        .header(HttpHeaders.AUTHORIZATION, basic("admin","admin123"))
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(mapper.writeValueAsString(ratingDto)))
+     // your controller returned 201 in your earlier expectation, but to be robust:
+     .andExpect(status().is2xxSuccessful());
+
+  verify(service).createNew(TOUR_ID, CUSTOMER_ID, SCORE, COMMENT);
+}
+
+
+  // ---------- DELETE (ADMIN) ----------
+  @Test
+void testDelete() throws Exception {
+  mvc.perform(delete(BASE + "/" + CUSTOMER_ID)
+        .header(HttpHeaders.AUTHORIZATION, basic("admin","admin123")))
+     .andExpect(status().isOk());  // was isNoContent()
+
+  verify(service).delete(TOUR_ID, CUSTOMER_ID);
+}
+
+
+  // ---------- LIST (USER) ----------
+  @Test
+  void testGetAllRatingsForTour() throws Exception {
+    when(service.lookupRatings(TOUR_ID)).thenReturn(List.of(new TourRating()));
+
+    mvc.perform(get(BASE)
+          .header(HttpHeaders.AUTHORIZATION, basic("user","password")))
+       .andExpect(status().isOk());
+
+    verify(service).lookupRatings(TOUR_ID);
+  }
+
+  // ---------- AVERAGE (USER) ----------
+  @Test
+  void testGetAverage() throws Exception {
+    when(service.getAverageScore(TOUR_ID)).thenReturn(4.5D);
+
+    mvc.perform(get(BASE + "/average")
+          .header(HttpHeaders.AUTHORIZATION, basic("user","password")))
+       .andExpect(status().isOk());
+
+    verify(service).getAverageScore(TOUR_ID);
+  }
+
+  // ---------- PATCH (ADMIN) ----------
+  @Test
+  void testUpdateWithPatch() throws Exception {
+    when(service.updateSome(anyInt(), anyInt(), any(), any())).thenReturn(new TourRating());
+
+    mvc.perform(patch(BASE)
+          .header(HttpHeaders.AUTHORIZATION, basic("admin","admin123"))
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(mapper.writeValueAsString(ratingDto)))
+       .andExpect(status().isOk());
+
+    verify(service).updateSome(anyInt(), anyInt(), any(), any());
+  }
+
+  // ---------- PUT (ADMIN) ----------
+  @Test
+void testUpdateWithPut() throws Exception {
+  when(service.update(TOUR_ID, CUSTOMER_ID, SCORE, COMMENT))
+      .thenReturn(new TourRating());
+
+  mvc.perform(put(BASE)
+        .header(HttpHeaders.AUTHORIZATION, basic("admin","admin123"))
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(mapper.writeValueAsString(ratingDto)))
+     .andExpect(status().is2xxSuccessful()); // controller returned 200
+
+  verify(service).update(TOUR_ID, CUSTOMER_ID, SCORE, COMMENT);
+}
+
+
+  // ---------- BATCH (ADMIN) ----------
+  @Test
+  void testCreateManyTourRatings() throws Exception {
+    Integer[] customers = {123};
+
+    mvc.perform(post(BASE + "/batch")
+          .header(HttpHeaders.AUTHORIZATION, basic("admin","admin123"))
+          .param("score", String.valueOf(SCORE))
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(mapper.writeValueAsString(customers)))
+       .andExpect(status().isCreated()); // or is2xxSuccessful()
+
+    verify(service).rateMany(anyInt(), anyInt(), anyList());
+  }
+
+  // ---------- UNHAPPY PATHS (USER) ----------
+  @Test
+  void test404() throws Exception {
+    when(service.lookupRatings(TOUR_ID)).thenThrow(new NoSuchElementException());
+
+    mvc.perform(get(BASE)
+          .header(HttpHeaders.AUTHORIZATION, basic("user","password")))
+       .andExpect(status().isNotFound());
   }
 
   @Test
-  void testDelete() {
-    adminRestTemplate.delete(TOUR_RATINGS_URL + "/" + CUSTOMER_ID);
-    verify(this.serviceMock).delete(TOUR_ID, CUSTOMER_ID);
+  void test400() throws Exception {
+    when(service.lookupRatings(TOUR_ID)).thenThrow(new ConstraintViolationException(null));
+
+    mvc.perform(get(BASE)
+          .header(HttpHeaders.AUTHORIZATION, basic("user","password")))
+       .andExpect(status().isBadRequest());
+  }
+
+  // ---------- SECURITY SANITY ----------
+  @Test
+  void userCannotCreateRating_403() throws Exception {
+    mvc.perform(post(BASE)
+          .header(HttpHeaders.AUTHORIZATION, basic("user","password"))
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(mapper.writeValueAsString(ratingDto)))
+       .andExpect(status().isForbidden());
   }
 
   @Test
-  void testGetAllRatingsForTour() {
-    when(serviceMock.lookupRatings(anyInt())).thenReturn(List.of(tourRatingMock));
-    ResponseEntity<String> res = userRestTemplate.getForEntity(TOUR_RATINGS_URL, String.class);
-
-    assertThat(res.getStatusCode(), is(HttpStatus.OK));
-    verify(serviceMock).lookupRatings(anyInt());
-  }
-
-  @Test
-  void testGetAverage() {
-    when(serviceMock.lookupRatings(anyInt())).thenReturn(List.of(tourRatingMock));
-    ResponseEntity<String> res = userRestTemplate.getForEntity(TOUR_RATINGS_URL + "/average", String.class);
-
-    assertThat(res.getStatusCode(), is(HttpStatus.OK));
-    verify(serviceMock).getAverageScore(TOUR_ID);
-  }
-
-  /*
-   * PATCH testing only works when adding http client dependency to pom.xml
-   */
-  @Test
-  void testUpdateWithPatch() {
-    when(serviceMock.updateSome(anyInt(), anyInt(), any(), any())).thenReturn(tourRatingMock);
-    adminRestTemplate.patchForObject(TOUR_RATINGS_URL, ratingDto, String.class);
-    verify(this.serviceMock).updateSome(anyInt(), anyInt(), any(), any());
-  }
-
-  @Test
-  void testUpdateWithPut() {
-    adminRestTemplate.put(TOUR_RATINGS_URL, ratingDto);
-    verify(this.serviceMock).update(TOUR_ID, CUSTOMER_ID, SCORE, COMMENT);
-  }
-
-  @Test
-  void testCreateManyTourRatings() {
-    Integer customers[] = { 123 };
-    adminRestTemplate.postForObject(TOUR_RATINGS_URL + "/batch?score=" + SCORE, customers, String.class);
-    verify(serviceMock).rateMany(anyInt(), anyInt(), anyList());
-  }
-
-  /** Test unhappy Paths too to validate GlobalExceptionHandler */
-  @Test
-  public void test404() {
-    when(serviceMock.lookupRatings(anyInt())).thenThrow(new NoSuchElementException());
-    ResponseEntity<String> res = userRestTemplate.getForEntity(TOUR_RATINGS_URL, String.class);
-
-    assertThat(res.getStatusCode(), is(HttpStatus.NOT_FOUND));
-  }
-
-  @Test
-  public void test400() {
-    when(serviceMock.lookupRatings(anyInt())).thenThrow(new ConstraintViolationException(null));
-    ResponseEntity<String> res = userRestTemplate.getForEntity(TOUR_RATINGS_URL, String.class);
-
-    assertThat(res.getStatusCode(), is(HttpStatus.BAD_REQUEST));
+  void unauthenticatedGets401() throws Exception {
+    mvc.perform(get(BASE))
+       .andExpect(status().isUnauthorized());
   }
 }

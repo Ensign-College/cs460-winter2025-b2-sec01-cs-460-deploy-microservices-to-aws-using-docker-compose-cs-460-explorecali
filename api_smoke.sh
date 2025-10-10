@@ -1,24 +1,41 @@
+#!/usr/bin/env bash
 set -euo pipefail
 
-# Load env file if it exists (prefer .env.prod in production)
-if [[ -f ".env.prod" ]]; then
+# ──────────────────────────────────────────────────────────────────────────────
+# Environment selection: dev | prod  (default: dev)
+# You can run: SMOKE_ENV=prod bash api_smoke.sh
+# ──────────────────────────────────────────────────────────────────────────────
+SMOKE_ENV="${SMOKE_ENV:-dev}"
+case "$SMOKE_ENV" in
+  dev)  ENV_FILE=".smoke.dev" ;;
+  prod) ENV_FILE=".smoke.prod" ;;
+  *)    echo "Unknown SMOKE_ENV='$SMOKE_ENV' (use 'dev' or 'prod')"; exit 1 ;;
+esac
+
+# Load environment file if present (recommended), else fall back to sensible defaults.
+if [[ -f "$ENV_FILE" ]]; then
   set -a
-  # shellcheck disable=SC1091
-  source .env.prod
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
   set +a
-elif [[ -f ".env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source .env
-  set +a
+else
+  echo "[$SMOKE_ENV] ENV file '$ENV_FILE' not found. Using built-in defaults."
 fi
 
-# Allow CLI overrides (e.g., BASE_URL=... bash api_smoke.sh)
-PUBLIC_IP="${PUBLIC_IP:-127.0.0.1}"
+# ──────────────────────────────────────────────────────────────────────────────
+# Defaults (can be overridden by env file or CLI, e.g., BASE_URL=...)
+# ──────────────────────────────────────────────────────────────────────────────
+# Prefer BASE_URL if provided; otherwise compute from host/port by environment.
 PORT="${PORT:-8080}"
 
-# Derive your base URL from env
-BASE_URL="${BASE_URL:-http://${PUBLIC_IP}:${PORT}}"
+if [[ "${SMOKE_ENV}" == "prod" ]]; then
+  PUBLIC_HOST="${PUBLIC_HOST:-54.162.92.234}"
+else
+  # Codespaces terminal: talk to the service directly on localhost.
+  PUBLIC_HOST="${PUBLIC_HOST:-localhost}"
+fi
+
+BASE_URL="${BASE_URL:-http://${PUBLIC_HOST}:${PORT}}"
 
 # Optional: auth from env with sane defaults
 USER_USER="${USER_USER:-user}"
@@ -26,12 +43,13 @@ USER_PASS="${USER_PASS:-password}"
 ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASS="${ADMIN_PASS:-admin123}"
 
+echo "Using SMOKE_ENV=${SMOKE_ENV}"
 echo "Using BASE_URL=${BASE_URL}"
 
-
-# Styling
+# ──────────────────────────────────────────────────────────────────────────────
+# Styling helpers
+# ──────────────────────────────────────────────────────────────────────────────
 GREEN="\033[32m"; RED="\033[31m"; CYAN="\033[36m"; BOLD="\033[1m"; DIM="\033[2m"; RESET="\033[0m"
-
 hr() { echo -e "${DIM}--------------------------------------------------------------------------------${RESET}"; }
 
 # run_test METHOD PATH EXPECTED_CODES BODY AUTH_KIND
@@ -79,17 +97,14 @@ run_test() {
 
 main() {
   # ---- Packages ----
-  # Create (adjust expected if your controller returns 200/201/204)
   run_test POST "/packages" "201|200|204" '{"code":"BB","name":"Beekeepers you Betcha"}' none
-  run_test POST "/packages" "403" '{"code":"BB","name":"Beekeepers you Betcha"}' user
+  run_test POST "/packages" "403"        '{"code":"BB","name":"Beekeepers you Betcha"}' user
   run_test POST "/packages" "201|200|204" '{"code":"BB","name":"Beekeepers you Betcha"}' admin
 
-  # List
   run_test GET "/packages" "401" "" none
   run_test GET "/packages" "200" "" user
   run_test GET "/packages" "200" "" admin
 
-  # Delete
   run_test DELETE "/packages/BB" "401" "" none
   run_test DELETE "/packages/BB" "403" "" user
   run_test DELETE "/packages/BB" "204|200|404" "" admin
@@ -103,46 +118,38 @@ main() {
   run_test GET "/recommendations/customer/5?limit=5" "200" "" user
   run_test GET "/recommendations/customer/5?limit=5" "200" "" admin
 
-  # ---- Tour Ratings (matches your TourRatingControllerTest) ----
-  # Constants from your tests
+  # ---- Tour Ratings ----
   TOUR_ID=999
   CUSTOMER_ID=1000
   RATING_BODY='{"score":3,"comment":"comment","customerId":1000}'
   BATCH_BODY='[123,456]'
 
-  # Create rating
   run_test POST "/tours/${TOUR_ID}/ratings" "401" "$RATING_BODY" none
   run_test POST "/tours/${TOUR_ID}/ratings" "403" "$RATING_BODY" user
   run_test POST "/tours/${TOUR_ID}/ratings" "201|200" "$RATING_BODY" admin
 
-  # Delete rating
   run_test DELETE "/tours/${TOUR_ID}/ratings/${CUSTOMER_ID}" "401" "" none
   run_test DELETE "/tours/${TOUR_ID}/ratings/${CUSTOMER_ID}" "403" "" user
   run_test DELETE "/tours/${TOUR_ID}/ratings/${CUSTOMER_ID}" "204|200|404" "" admin
 
-  # List ratings
   run_test GET "/tours/${TOUR_ID}/ratings" "401" "" none
   run_test GET "/tours/${TOUR_ID}/ratings" "200|404" "" user
   run_test GET "/tours/${TOUR_ID}/ratings" "200|404" "" admin
 
-  # Average
   run_test GET "/tours/${TOUR_ID}/ratings/average" "401" "" none
   run_test GET "/tours/${TOUR_ID}/ratings/average" "200|404" "" user
   run_test GET "/tours/${TOUR_ID}/ratings/average" "200|404" "" admin
 
-  # PATCH (partial update)
   run_test PATCH "/tours/${TOUR_ID}/ratings" "401" "$RATING_BODY" none
   run_test PATCH "/tours/${TOUR_ID}/ratings" "403" "$RATING_BODY" user
   run_test PATCH "/tours/${TOUR_ID}/ratings" "200" "$RATING_BODY" admin
-  # Optional partial body example (uncomment if supported)
+  # Example minimal partial:
   # run_test PATCH "/tours/${TOUR_ID}/ratings" "200" '{"comment":"updated comment"}' admin
 
-  # PUT (full update)
   run_test PUT "/tours/${TOUR_ID}/ratings" "401" "$RATING_BODY" none
   run_test PUT "/tours/${TOUR_ID}/ratings" "403" "$RATING_BODY" user
   run_test PUT "/tours/${TOUR_ID}/ratings" "200" "$RATING_BODY" admin
 
-  # Batch create
   run_test POST "/tours/${TOUR_ID}/ratings/batch?score=3" "401" "$BATCH_BODY" none
   run_test POST "/tours/${TOUR_ID}/ratings/batch?score=3" "403" "$BATCH_BODY" user
   run_test POST "/tours/${TOUR_ID}/ratings/batch?score=3" "200|201" "$BATCH_BODY" admin

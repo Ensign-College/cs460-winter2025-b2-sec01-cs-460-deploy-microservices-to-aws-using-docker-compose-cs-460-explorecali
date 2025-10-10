@@ -20,7 +20,7 @@ public class TourPackage {
     @Column
     private String name;
 
-    protected TourPackage() {
+    public TourPackage() {
     }
 
     public TourPackage(String code, String name) {

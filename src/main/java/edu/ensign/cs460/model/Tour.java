@@ -62,7 +62,7 @@ public class Tour {
         this.region = region;
     }
 
-    protected Tour() {
+    public Tour() {
     }
 
     public Integer getId() {
