@@ -5,6 +5,7 @@ node_modules
 npm-debug.log
 .vscode/launch.json
 data/
+Dockerfile
 .smoke.*
 
 # Maven

@@ -1,187 +1,176 @@
 package edu.ensign.cs460.web;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.List;
 import java.util.NoSuchElementException;
 
 import jakarta.validation.ConstraintViolationException;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.http.*;
+import org.springframework.boot.test.web.client.TestRestTemplate;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import com.example.explorecalijpa.config.SecurityConfig; // ← adjust if needed
-
+import edu.ensign.cs460.config.SecurityConfig;
 import edu.ensign.cs460.business.TourRatingService;
 import edu.ensign.cs460.model.TourRating;
 
-@WebMvcTest(TourRatingController.class)
-@Import({ SecurityConfig.class /* , YourControllerAdviceIfAny.class */ })
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import({ SecurityConfig.class })
 class TourRatingControllerTest {
 
   private static final int TOUR_ID = 999;
   private static final int CUSTOMER_ID = 1000;
   private static final int SCORE = 3;
   private static final String COMMENT = "comment";
-  private static final String BASE = "/tours/" + TOUR_ID + "/ratings";
+  private static final String BASE = "/tours/{tourId}/ratings";
 
-  @Autowired private MockMvc mvc;
   @Autowired private ObjectMapper mapper;
+  @Autowired private TestRestTemplate template;
 
   @MockBean private TourRatingService service;
 
+  private TestRestTemplate userRestTemplate;
+  private TestRestTemplate adminRestTemplate;
+
   private final RatingDto ratingDto = new RatingDto(SCORE, COMMENT, CUSTOMER_ID);
 
-  private static String basic(String user, String pass) {
-    var token = user + ":" + pass;
-    var b64 = Base64.getEncoder().encodeToString(token.getBytes(StandardCharsets.UTF_8));
-    return "Basic " + b64;
+  @BeforeEach
+  void setUp() {
+    this.userRestTemplate = template.withBasicAuth("user", "password");
+    this.adminRestTemplate = template.withBasicAuth("admin", "admin123");
   }
 
-  // ---------- CREATE (ADMIN) ----------
   @Test
-void testCreateTourRating() throws Exception {
-  // stub a non-null result so controller can serialize
-  when(service.createNew(TOUR_ID, CUSTOMER_ID, SCORE, COMMENT))
-      .thenReturn(new TourRating());
+  void testCreateTourRating() throws Exception {
+    when(service.createNew(TOUR_ID, CUSTOMER_ID, SCORE, COMMENT))
+        .thenReturn(new TourRating());
 
-  mvc.perform(post(BASE)
-        .header(HttpHeaders.AUTHORIZATION, basic("admin","admin123"))
-        .contentType(MediaType.APPLICATION_JSON)
-        .content(mapper.writeValueAsString(ratingDto)))
-     // your controller returned 201 in your earlier expectation, but to be robust:
-     .andExpect(status().is2xxSuccessful());
+    ResponseEntity<Void> resp =
+        adminRestTemplate.postForEntity(BASE, ratingDto, Void.class, TOUR_ID);
 
-  verify(service).createNew(TOUR_ID, CUSTOMER_ID, SCORE, COMMENT);
-}
+    assertThat(resp.getStatusCode().is2xxSuccessful()).isTrue();
+    verify(service).createNew(TOUR_ID, CUSTOMER_ID, SCORE, COMMENT);
+  }
 
-
-  // ---------- DELETE (ADMIN) ----------
   @Test
-void testDelete() throws Exception {
-  mvc.perform(delete(BASE + "/" + CUSTOMER_ID)
-        .header(HttpHeaders.AUTHORIZATION, basic("admin","admin123")))
-     .andExpect(status().isOk());  // was isNoContent()
+  void testDelete() {
+    ResponseEntity<Void> resp =
+        adminRestTemplate.exchange(
+            BASE + "/{customerId}", HttpMethod.DELETE, null, Void.class, TOUR_ID, CUSTOMER_ID);
 
-  verify(service).delete(TOUR_ID, CUSTOMER_ID);
-}
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    verify(service).delete(TOUR_ID, CUSTOMER_ID);
+  }
 
-
-  // ---------- LIST (USER) ----------
   @Test
-  void testGetAllRatingsForTour() throws Exception {
+  void testGetAllRatingsForTour() {
     when(service.lookupRatings(TOUR_ID)).thenReturn(List.of(new TourRating()));
 
-    mvc.perform(get(BASE)
-          .header(HttpHeaders.AUTHORIZATION, basic("user","password")))
-       .andExpect(status().isOk());
+    ResponseEntity<TourRating[]> resp =
+        userRestTemplate.getForEntity(BASE, TourRating[].class, TOUR_ID);
 
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
     verify(service).lookupRatings(TOUR_ID);
   }
 
-  // ---------- AVERAGE (USER) ----------
   @Test
-  void testGetAverage() throws Exception {
+  void testGetAverage() {
     when(service.getAverageScore(TOUR_ID)).thenReturn(4.5D);
 
-    mvc.perform(get(BASE + "/average")
-          .header(HttpHeaders.AUTHORIZATION, basic("user","password")))
-       .andExpect(status().isOk());
+    ResponseEntity<Double> resp =
+        userRestTemplate.getForEntity(BASE + "/average", Double.class, TOUR_ID);
 
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
     verify(service).getAverageScore(TOUR_ID);
   }
 
-  // ---------- PATCH (ADMIN) ----------
   @Test
   void testUpdateWithPatch() throws Exception {
     when(service.updateSome(anyInt(), anyInt(), any(), any())).thenReturn(new TourRating());
 
-    mvc.perform(patch(BASE)
-          .header(HttpHeaders.AUTHORIZATION, basic("admin","admin123"))
-          .contentType(MediaType.APPLICATION_JSON)
-          .content(mapper.writeValueAsString(ratingDto)))
-       .andExpect(status().isOk());
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.APPLICATION_JSON);
+    HttpEntity<String> entity = new HttpEntity<>(mapper.writeValueAsString(ratingDto), headers);
 
+    ResponseEntity<Void> resp =
+        adminRestTemplate.exchange(BASE, HttpMethod.PATCH, entity, Void.class, TOUR_ID);
+
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
     verify(service).updateSome(anyInt(), anyInt(), any(), any());
   }
 
-  // ---------- PUT (ADMIN) ----------
   @Test
-void testUpdateWithPut() throws Exception {
-  when(service.update(TOUR_ID, CUSTOMER_ID, SCORE, COMMENT))
-      .thenReturn(new TourRating());
+  void testUpdateWithPut() throws Exception {
+    when(service.update(TOUR_ID, CUSTOMER_ID, SCORE, COMMENT))
+        .thenReturn(new TourRating());
 
-  mvc.perform(put(BASE)
-        .header(HttpHeaders.AUTHORIZATION, basic("admin","admin123"))
-        .contentType(MediaType.APPLICATION_JSON)
-        .content(mapper.writeValueAsString(ratingDto)))
-     .andExpect(status().is2xxSuccessful()); // controller returned 200
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.APPLICATION_JSON);
+    HttpEntity<String> entity = new HttpEntity<>(mapper.writeValueAsString(ratingDto), headers);
 
-  verify(service).update(TOUR_ID, CUSTOMER_ID, SCORE, COMMENT);
-}
+    ResponseEntity<Void> resp =
+        adminRestTemplate.exchange(BASE, HttpMethod.PUT, entity, Void.class, TOUR_ID);
 
+    assertThat(resp.getStatusCode().is2xxSuccessful()).isTrue();
+    verify(service).update(TOUR_ID, CUSTOMER_ID, SCORE, COMMENT);
+  }
 
-  // ---------- BATCH (ADMIN) ----------
   @Test
   void testCreateManyTourRatings() throws Exception {
     Integer[] customers = {123};
 
-    mvc.perform(post(BASE + "/batch")
-          .header(HttpHeaders.AUTHORIZATION, basic("admin","admin123"))
-          .param("score", String.valueOf(SCORE))
-          .contentType(MediaType.APPLICATION_JSON)
-          .content(mapper.writeValueAsString(customers)))
-       .andExpect(status().isCreated()); // or is2xxSuccessful()
+    ResponseEntity<Void> resp =
+        adminRestTemplate.postForEntity(
+            BASE + "/batch?score={score}", customers, Void.class, TOUR_ID, SCORE);
 
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     verify(service).rateMany(anyInt(), anyInt(), anyList());
   }
 
-  // ---------- UNHAPPY PATHS (USER) ----------
   @Test
-  void test404() throws Exception {
+  void test404() {
     when(service.lookupRatings(TOUR_ID)).thenThrow(new NoSuchElementException());
 
-    mvc.perform(get(BASE)
-          .header(HttpHeaders.AUTHORIZATION, basic("user","password")))
-       .andExpect(status().isNotFound());
+    ResponseEntity<String> resp =
+        userRestTemplate.getForEntity(BASE, String.class, TOUR_ID);
+
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
   }
 
   @Test
-  void test400() throws Exception {
+  void test400() {
     when(service.lookupRatings(TOUR_ID)).thenThrow(new ConstraintViolationException(null));
 
-    mvc.perform(get(BASE)
-          .header(HttpHeaders.AUTHORIZATION, basic("user","password")))
-       .andExpect(status().isBadRequest());
+    ResponseEntity<String> resp =
+        userRestTemplate.getForEntity(BASE, String.class, TOUR_ID);
+
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
   }
 
-  // ---------- SECURITY SANITY ----------
   @Test
   void userCannotCreateRating_403() throws Exception {
-    mvc.perform(post(BASE)
-          .header(HttpHeaders.AUTHORIZATION, basic("user","password"))
-          .contentType(MediaType.APPLICATION_JSON)
-          .content(mapper.writeValueAsString(ratingDto)))
-       .andExpect(status().isForbidden());
+    ResponseEntity<String> resp =
+        userRestTemplate.postForEntity(BASE, ratingDto, String.class, TOUR_ID);
+
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
   }
 
   @Test
-  void unauthenticatedGets401() throws Exception {
-    mvc.perform(get(BASE))
-       .andExpect(status().isUnauthorized());
+  void unauthenticatedGets401() {
+    ResponseEntity<String> resp =
+        template.getForEntity(BASE, String.class, TOUR_ID);
+
+    assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
   }
 }
