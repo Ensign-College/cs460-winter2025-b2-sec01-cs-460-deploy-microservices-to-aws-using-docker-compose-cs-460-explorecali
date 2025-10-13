@@ -2,6 +2,6 @@
 <configuration>
 
     <include resource="org/springframework/boot/logging/logback/base.xml"/>
-    <logger name="com.example.explorecalijpa" level="DEBUG"/>
+    <logger name="edu.ensign.cs460" level="DEBUG"/>
 </configuration>
 
