@@ -13,18 +13,21 @@ import com.example.explorecalijpa.business.TourService;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
 
-@SpringBootApplication
+// 👇 Add scanBasePackages here to include both your current package and the new one
+@SpringBootApplication(scanBasePackages = {
+        "com.example.explorecalijpa",
+        "edu.ensign.cs460"
+})
 public class ExplorecaliJpaApplication implements CommandLineRunner {
- 
+
     @Bean
     public OpenAPI swaggerHeader() {
         return new OpenAPI()
-            .info((new Info())
-            .description("Services for the Explore California Relational Database.")
-            .title(StringUtils.substringBefore(getClass().getSimpleName(), "$"))
-            .version("3.0.0"));
+                .info(new Info()
+                        .description("Services for the Explore California Relational Database.")
+                        .title(StringUtils.substringBefore(getClass().getSimpleName(), "$")) 
+                        .version("3.0.0"));
     }
-    
 
     @Autowired
     private TourPackageService tourPackageService;
@@ -33,7 +36,6 @@ public class ExplorecaliJpaApplication implements CommandLineRunner {
     private TourService tourService;
 
     public static void main(String[] args) {
-
         SpringApplication.run(ExplorecaliJpaApplication.class, args);
     }
 
