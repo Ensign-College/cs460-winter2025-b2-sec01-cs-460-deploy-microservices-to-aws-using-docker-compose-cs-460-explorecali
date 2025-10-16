@@ -88,12 +88,16 @@ class TourRatingControllerTest {
   void testGetAverage() {
     when(service.getAverageScore(TOUR_ID)).thenReturn(4.5D);
 
-    ResponseEntity<Double> resp =
-        userRestTemplate.getForEntity(BASE + "/average", Double.class, TOUR_ID);
+    ResponseEntity<java.util.Map> resp =
+        userRestTemplate.getForEntity(BASE + "/average", java.util.Map.class, TOUR_ID);
 
     assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(resp.getBody()).isNotNull();
+    assertThat(resp.getBody().get("average")).isEqualTo(4.5D);
+
     verify(service).getAverageScore(TOUR_ID);
-  }
+}
+
 
   @Test
   void testUpdateWithPatch() throws Exception {
